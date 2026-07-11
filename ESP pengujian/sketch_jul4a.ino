@@ -1,0 +1,199 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+
+// ================= SENSOR =================
+#define DHTPIN 18
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// ================= LCD =================
+#define SDA_PIN 23
+#define SCL_PIN 19
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// ================= OUTPUT =================
+#define LED_NORMAL 26
+#define LED_GANGGUAN 27
+#define BUZZER 25
+
+// ================= THRESHOLD =================
+const float BATAS_PANAS = 27.0;
+const float BATAS_DINGIN = 15.0;
+
+// ================= TIMER =================
+const unsigned long INTERVAL = 300000; // 5 menit
+unsigned long lastMillis = 0;
+
+// ================= VARIABLES =================
+float suhu = 0;
+float hum = 0;
+bool sensorOK = false;
+
+// ================= STATUS =================
+enum Status { NORMAL, PANAS, DINGIN };
+Status status = NORMAL;
+
+// =====================================================
+String statusToString(Status s) {
+  if (s == PANAS) return "PANAS";
+  if (s == DINGIN) return "DINGIN";
+  return "NORMAL";
+}
+
+// =====================================================
+bool bacaSensor() {
+
+  suhu = dht.readTemperature();
+  hum = dht.readHumidity();
+
+  if (isnan(suhu) || isnan(hum)) {
+    sensorOK = false;
+    return false;
+  }
+
+  sensorOK = true;
+  return true;
+}
+
+// =====================================================
+void hitungStatus() {
+  if (suhu > BATAS_PANAS) status = PANAS;
+  else if (suhu < BATAS_DINGIN) status = DINGIN;
+  else status = NORMAL;
+}
+
+// =====================================================
+void kontrolHardware() {
+
+  if (status == NORMAL) {
+    digitalWrite(LED_NORMAL, HIGH);
+    digitalWrite(LED_GANGGUAN, LOW);
+    noTone(BUZZER);
+  } 
+  else {
+    digitalWrite(LED_NORMAL, LOW);
+    digitalWrite(LED_GANGGUAN, HIGH);
+    tone(BUZZER, 2000);
+  }
+}
+
+// =====================================================
+void tampilLCD() {
+
+  lcd.clear();
+
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(suhu, 1);
+  lcd.print("C");
+
+  lcd.print(" H:");
+  lcd.print(hum, 0);
+
+  lcd.setCursor(0, 1);
+  lcd.print("STATUS:");
+  lcd.print(statusToString(status));
+}
+
+// =====================================================
+// DIAGNOSTIC SERIAL (FIXED SESUAI PERMINTAAN KAMU)
+// =====================================================
+void logSerial() {
+
+  Serial.println("======================================");
+  Serial.println("SYSTEM DIAGNOSTIC REPORT");
+
+  Serial.println("[OK] DHT11 SENSOR ACTIVE");
+
+  Serial.print("[OK] SUHU: ");
+  Serial.print(suhu, 1);
+  Serial.println(" C");
+
+  Serial.print("[OK] HUMIDITY: ");
+  Serial.print(hum, 0);
+  Serial.println(" %");
+
+  Serial.print("[OK] STATUS: ");
+  Serial.println(statusToString(status));
+
+  Serial.println("----- OUTPUT MODULE -----");
+
+  if (status == NORMAL) {
+    Serial.println("[OK] LED NORMAL: ON");
+    Serial.println("[OFF] LED GANGGUAN: OFF");
+    Serial.println("[OFF] BUZZER: OFF");
+  } 
+  else {
+    Serial.println("[OFF] LED NORMAL: OFF");
+    Serial.println("[ON] LED GANGGUAN: ACTIVE");
+    Serial.println("[ON] BUZZER: ACTIVE");
+  }
+
+  Serial.println("[OK] LCD: UPDATED SUCCESSFULLY");
+  Serial.println("[OK] SYSTEM STATE: STABLE");
+
+  Serial.println("======================================");
+}
+
+// =====================================================
+void tampilError() {
+
+  Serial.println("!!!!!!!! SYSTEM ERROR !!!!!!!!");
+  Serial.println("DHT11 SENSOR NOT RESPONDING");
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MONITOR ERROR");
+  lcd.setCursor(0, 1);
+  lcd.print("CHECK SENSOR");
+
+  digitalWrite(LED_NORMAL, LOW);
+  digitalWrite(LED_GANGGUAN, HIGH);
+  noTone(BUZZER);
+}
+
+// =====================================================
+void setup() {
+
+  Serial.begin(115200);
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+  lcd.begin();        // kalau error ganti lcd.init()
+  lcd.backlight();
+
+  dht.begin();
+
+  pinMode(LED_NORMAL, OUTPUT);
+  pinMode(LED_GANGGUAN, OUTPUT);
+  pinMode(BUZZER, OUTPUT);
+
+  digitalWrite(LED_NORMAL, HIGH);
+  digitalWrite(LED_GANGGUAN, LOW);
+
+  Serial.println("SYSTEM STARTED SUCCESSFULLY");
+  Serial.println("INITIALIZING MODULES...");
+}
+
+// =====================================================
+void loop() {
+
+  unsigned long now = millis();
+
+  if (now - lastMillis >= INTERVAL) {
+    lastMillis = now;
+
+    Serial.println("READING SENSOR...");
+
+    if (bacaSensor()) {
+
+      hitungStatus();
+      kontrolHardware();
+      tampilLCD();
+      logSerial();
+
+    } else {
+      tampilError();
+    }
+  }
+}
